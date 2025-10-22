@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Focus Assistant v2 — Activity-only</title>
+<style>
+  :root{--bg:#071022;--card:#0b1630;--muted:#9fb0d6;--accent:#2563eb}
+  body{margin:0;font-family:Inter,system-ui,Arial;background:linear-gradient(180deg,var(--bg),#031223);color:#e6eef8;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{width:860px;max-width:96vw;background:linear-gradient(180deg,var(--card),#071424);padding:18px;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+  h1{margin:0;font-size:20px}
+  p.tip{color:var(--muted);margin:6px 0 12px}
+  .grid{display:grid;grid-template-columns:1fr 300px;gap:14px}
+  label{font-size:13px;color:var(--muted)}
+  input,select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.04);background:rgba(255,255,255,.02);color:inherit}
+  button{padding:8px 12px;border-radius:10px;border:0;background:var(--accent);color:white;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,.06)}
+  .stats{background:rgba(255,255,255,.02);padding:10px;border-radius:8px}
+  .log{height:120px;overflow:auto;background:#021124;padding:8px;border-radius:6px;font-size:13px}
+  .pill{display:inline-block;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,.03)}
+  .center{display:flex;gap:8px;align-items:center}
+  footer{margin-top:10px;color:var(--muted);font-size:13px}
+  #fullscreenNotice{color:#ffd9d9}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Focus Assistant v2</h1>
+    <p class="tip">Activity-only mode (no camera). Detects keyboard/mouse inactivity, tab switching / window blur, and reminds with a soft notification + beep. Works fully offline in your browser.</p>
+
+    <div class="grid">
+      <div>
+        <label>Idle threshold (seconds)</label>
+        <input id="idleSec" type="number" min="5" value="30" />
+
+        <label style="margin-top:8px">Reminder cooldown (seconds)</label>
+        <input id="cooldownSec" type="number" min="5" value="20" />
+
+        <label style="margin-top:8px">Reminder style</label>
+        <select id="reminderStyle">
+          <option value="notif">Soft notification + beep (default)</option>
+          <option value="modal">Small modal + beep</option>
+          <option value="both">Both</option>
+        </select>
+
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button id="startBtn">Start</button>
+          <button id="stopBtn" class="ghost">Stop</button>
+          <button id="resetBtn" class="ghost">Reset stats</button>
+        </div>
+
+        <div style="margin-top:12px" class="stats">
+          <div>Status: <span id="status" class="pill">stopped</span></div>
+          <div style="margin-top:6px">Session time: <span id="sessionTime" class="pill">00:00:00</span></div>
+          <div style="margin-top:6px">Focus time: <span id="focusTime" class="pill">00:00:00</span></div>
+          <div style="margin-top:6px">Distraction count: <span id="dcount" class="pill">0</span></div>
+        </div>
+
+        <div style="margin-top:10px">
+          <label>Logs</label>
+          <div class="log" id="log"></div>
+        </div>
+
+      </div>
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <label>Auto-notify / permission</label>
+            <div style="font-size:13px;color:var(--muted)">Grant notifications when prompted for best experience</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;color:var(--muted)">Last activity: <span id="lastAct">never</span></div>
+            <div style="font-size:13px;color:var(--muted);margin-top:6px">Last reminder: <span id="lastRem">never</span></div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px;background:rgba(255,255,255,.02);padding:12px;border-radius:8px">
+          <strong>Quick toggles</strong>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button id="toggleDetect">Pause detection</button>
+            <button id="saveSettings" class="ghost">Save settings</button>
+          </div>
+          <div style="margin-top:10px;font-size:13px;color:var(--muted)">Settings are saved in your browser's localStorage.</div>
+        </div>
+
+        <div style="margin-top:12px;font-size:13px;color:var(--muted)">
+          Tip: if you often switch tabs while studying, increase the idle threshold to avoid false positives.
+        </div>
+
+      </div>
+    </div>
+
+    <footer>
+      Made for you — open this file and click Start whenever you want to focus. Want desktop app or site-blocking next? Tell me.
+    </footer>
+
+    <!-- simple modal -->
+    <div id="modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:9999">
+      <div style="background:#0a1726;padding:18px;border-radius:12px;max-width:560px;box-shadow:0 10px 40px rgba(0,0,0,.6)">
+        <h2 style="margin:0 0 8px">Heads up — stay focused!</h2>
+        <p style="margin:0 0 12px">You seem to be distracted. Click "I'm back" when you're ready to continue.</p>
+        <div style="text-align:right"><button id="backBtn">I'm back</button></div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+// Focus Assistant v2 - Activity-only
+(function(){
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+  const lastActEl = document.getElementById('lastAct');
+  const lastRemEl = document.getElementById('lastRem');
+  const sessionTimeEl = document.getElementById('sessionTime');
+  const focusTimeEl = document.getElementById('focusTime');
+  const dcountEl = document.getElementById('dcount');
+  const idleInput = document.getElementById('idleSec');
+  const cooldownInput = document.getElementById('cooldownSec');
+  const reminderStyle = document.getElementById('reminderStyle');
+  const toggleDetect = document.getElementById('toggleDetect');
+  const saveSettings = document.getElementById('saveSettings');
+  const modal = document.getElementById('modal');
+  const backBtn = document.getElementById('backBtn');
+
+  let running = false;
+  let paused = false;
+  let lastActivity = Date.now();
+  let lastReminder = 0;
+  let startTime = null;
+  let focusAccum = 0; // ms
+  let dcount = 0;
+  let idleThreshold = Number(idleInput.value) * 1000;
+  let cooldown = Number(cooldownInput.value) * 1000;
+  let monitorInterval = 1000;
+  let loopHandle = null;
+
+  // load saved settings
+  const saved = JSON.parse(localStorage.getItem('focus_v2_settings')||'{}');
+  if (saved.idleSec) idleInput.value = saved.idleSec;
+  if (saved.cooldownSec) cooldownInput.value = saved.cooldownSec;
+  if (saved.reminderStyle) reminderStyle.value = saved.reminderStyle;
+
+  // load stats
+  const stats = JSON.parse(localStorage.getItem('focus_v2_stats')||'{}');
+  if (stats.focusAccum) focusAccum = stats.focusAccum;
+  if (stats.dcount) dcount = stats.dcount;
+  updateStatsUI();
+
+  function log(msg){
+    const t = new Date().toLocaleTimeString();
+    logEl.innerHTML = `<div>[${t}] ${msg}</div>` + logEl.innerHTML;
+  }
+
+  function formatDuration(ms){
+    const s = Math.floor(ms/1000);
+    const h = Math.floor(s/3600);
+    const m = Math.floor((s%3600)/60);
+    const sec = s%60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  }
+
+  function updateStatsUI(){
+    focusTimeEl.textContent = formatDuration(focusAccum);
+    dcountEl.textContent = String(dcount);
+  }
+
+  function saveStats(){
+    localStorage.setItem('focus_v2_stats', JSON.stringify({focusAccum,dcount}));
+  }
+
+  function saveSettingsToStorage(){
+    localStorage.setItem('focus_v2_settings', JSON.stringify({idleSec: idleInput.value, cooldownSec: cooldownInput.value, reminderStyle: reminderStyle.value}));
+    log('Settings saved');
+  }
+
+  saveSettings.addEventListener('click', saveSettingsToStorage);
+
+  // activity listeners
+  const activityEvents = ['mousemove','keydown','mousedown','wheel','touchstart'];
+  function onActivity(){
+    lastActivity = Date.now();
+    lastActEl.textContent = new Date(lastActivity).toLocaleTimeString();
+  }
+
+  function startActivityListeners(){
+    activityEvents.forEach(e => window.addEventListener(e, onActivity, {passive:true}));
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+  }
+  function stopActivityListeners(){
+    activityEvents.forEach(e => window.removeEventListener(e, onActivity));
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('blur', onBlur);
+    window.removeEventListener('focus', onFocus);
+  }
+
+  function onVisibilityChange(){
+    if (document.hidden){
+      log('Tab hidden (may be distraction)');
+      // treat as activity gap by not updating lastActivity
+    } else {
+      lastActivity = Date.now();
+      lastActEl.textContent = new Date(lastActivity).toLocaleTimeString();
+      log('Tab visible');
+    }
+  }
+  function onBlur(){
+    log('Window lost focus');
+  }
+  function onFocus(){
+    lastActivity = Date.now();
+    lastActEl.textContent = new Date(lastActivity).toLocaleTimeString();
+    log('Window focused');
+  }
+
+  async function ensureNotifications(){
+    if (!('Notification' in window)) return false;
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission === 'denied') return false;
+    const p = await Notification.requestPermission();
+    return p === 'granted';
+  }
+
+  function playBeep(){
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 660;
+      const g = ctx.createGain(); g.gain.value = 0.02;
+      o.connect(g); g.connect(ctx.destination); o.start();
+      setTimeout(()=>{o.stop(); ctx.close();}, 220);
+    }catch(e){ }
+  }
+
+  function showReminder(){
+    lastReminder = Date.now();
+    lastRemEl.textContent = new Date(lastReminder).toLocaleTimeString();
+    dcount++;
+    updateStatsUI();
+    saveStats();
+    log('Reminder triggered');
+
+    const style = reminderStyle.value;
+    if (style === 'notif' || style === 'both'){
+      if (Notification.permission === 'granted'){
+        new Notification('Focus Assistant — reminder', {body:'You appear distracted — back to work?', silent:false});
+      }
+    }
+    if (style === 'modal' || style === 'both'){
+      modal.style.display = 'flex';
+    }
+    playBeep();
+  }
+
+  backBtn.addEventListener('click', ()=>{
+    modal.style.display = 'none';
+    lastActivity = Date.now();
+    lastActEl.textContent = new Date(lastActivity).toLocaleTimeString();
+  });
+
+  toggleDetect.addEventListener('click', ()=>{
+    paused = !paused;
+    toggleDetect.textContent = paused ? 'Resume detection' : 'Pause detection';
+    log('Detection ' + (paused ? 'paused' : 'resumed'));
+  });
+
+  resetBtn.addEventListener('click', ()=>{
+    if (!confirm('Reset focus stats?')) return;
+    focusAccum = 0; dcount = 0; saveStats(); updateStatsUI(); log('Stats reset');
+  });
+
+  startBtn.addEventListener('click', async ()=>{
+    if (running) return;
+    idleThreshold = Number(idleInput.value) * 1000;
+    cooldown = Number(cooldownInput.value) * 1000;
+    await ensureNotifications();
+    running = true; paused = false;
+    startTime = Date.now();
+    lastActivity = Date.now();
+    lastActEl.textContent = new Date(lastActivity).toLocaleTimeString();
+    statusEl.textContent = 'running';
+    statusEl.style.background = '#084e2c';
+    log('Monitoring started — idle: ' + (idleThreshold/1000) + 's');
+    startActivityListeners();
+    loopHandle = setInterval(loop, monitorInterval);
+  });
+
+  stopBtn.addEventListener('click', ()=>{
+    if (!running) return;
+    running = false; paused = false;
+    clearInterval(loopHandle); loopHandle = null;
+    stopActivityListeners();
+    statusEl.textContent = 'stopped';
+    statusEl.style.background = '';
+    // add remainder focus time
+    if (startTime) {
+      focusAccum += Date.now() - startTime - (dcount*0); // approximate
+      startTime = null;
+    }
+    saveStats(); updateStatsUI();
+    log('Monitoring stopped');
+  });
+
+  function loop(){
+    if (!running || paused) return;
+    const now = Date.now();
+    // update session timer
+    if (startTime) sessionTimeEl.textContent = formatDuration(now - startTime);
+    // accumulate focus time if not idle
+    const idle = now - lastActivity;
+    if (idle < idleThreshold){
+      // active
+      // accumulate to focusAccum
+      focusAccum += monitorInterval;
+      updateStatsUI();
+    }
+
+    // detect tab hidden as potential distraction
+    let distracted = false;
+    if (document.hidden) distracted = true;
+    if (idle >= idleThreshold) distracted = true;
+
+    if (distracted && (now - lastReminder) > Math.max(5000, cooldown)){
+      showReminder();
+    }
+  }
+
+  // save settings on unload
+  window.addEventListener('beforeunload', ()=>{
+    saveStats(); saveSettingsToStorage();
+  });
+
+  // init UI
+  updateStatsUI();
+  log('Prototype ready — click Start to begin monitoring');
+})();
+</script>
+</body>
+</html>
