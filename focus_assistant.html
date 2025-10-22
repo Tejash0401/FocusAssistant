@@ -107,7 +107,7 @@
   </div>
 
 <script>
-// Focus Assistant v2 - Activity-only
+
 (function(){
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
@@ -139,13 +139,13 @@
   let monitorInterval = 1000;
   let loopHandle = null;
 
-  // load saved settings
+  
   const saved = JSON.parse(localStorage.getItem('focus_v2_settings')||'{}');
   if (saved.idleSec) idleInput.value = saved.idleSec;
   if (saved.cooldownSec) cooldownInput.value = saved.cooldownSec;
   if (saved.reminderStyle) reminderStyle.value = saved.reminderStyle;
 
-  // load stats
+  
   const stats = JSON.parse(localStorage.getItem('focus_v2_stats')||'{}');
   if (stats.focusAccum) focusAccum = stats.focusAccum;
   if (stats.dcount) dcount = stats.dcount;
@@ -180,7 +180,7 @@
 
   saveSettings.addEventListener('click', saveSettingsToStorage);
 
-  // activity listeners
+  
   const activityEvents = ['mousemove','keydown','mousedown','wheel','touchstart'];
   function onActivity(){
     lastActivity = Date.now();
@@ -203,7 +203,7 @@
   function onVisibilityChange(){
     if (document.hidden){
       log('Tab hidden (may be distraction)');
-      // treat as activity gap by not updating lastActivity
+      
     } else {
       lastActivity = Date.now();
       lastActEl.textContent = new Date(lastActivity).toLocaleTimeString();
@@ -297,7 +297,7 @@
     stopActivityListeners();
     statusEl.textContent = 'stopped';
     statusEl.style.background = '';
-    // add remainder focus time
+   
     if (startTime) {
       focusAccum += Date.now() - startTime - (dcount*0); // approximate
       startTime = null;
@@ -309,18 +309,17 @@
   function loop(){
     if (!running || paused) return;
     const now = Date.now();
-    // update session timer
+ 
     if (startTime) sessionTimeEl.textContent = formatDuration(now - startTime);
-    // accumulate focus time if not idle
+    
     const idle = now - lastActivity;
     if (idle < idleThreshold){
-      // active
-      // accumulate to focusAccum
+     
       focusAccum += monitorInterval;
       updateStatsUI();
     }
 
-    // detect tab hidden as potential distraction
+    
     let distracted = false;
     if (document.hidden) distracted = true;
     if (idle >= idleThreshold) distracted = true;
@@ -330,12 +329,12 @@
     }
   }
 
-  // save settings on unload
+  
   window.addEventListener('beforeunload', ()=>{
     saveStats(); saveSettingsToStorage();
   });
 
-  // init UI
+  
   updateStatsUI();
   log('Prototype ready — click Start to begin monitoring');
 })();
